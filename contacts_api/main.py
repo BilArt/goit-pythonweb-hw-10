@@ -5,10 +5,13 @@ from models import Base, Contact
 from schemas import ContactCreate, ContactResponse
 from typing import List, Optional
 from datetime import date, timedelta
+from auth import auth_router 
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 
 def get_db():
     db = SessionLocal()
