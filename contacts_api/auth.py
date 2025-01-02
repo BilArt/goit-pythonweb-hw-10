@@ -3,11 +3,11 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from decouple import config
 from sqlalchemy.orm import Session
-from database import get_db
-from models import User
-from schemas import UserCreate, UserResponse, Token
-from utils import hash_password, verify_password
-from email_utils import send_email
+from contacts_api.database import get_db
+from contacts_api.models import User
+from contacts_api.schemas import UserCreate, UserResponse, Token
+from contacts_api.utils import hash_password, verify_password
+from contacts_api.email_utils import send_email
 from datetime import datetime, timedelta
 
 SECRET_KEY = config("SECRET_KEY", default="supersecretkey")
@@ -25,6 +25,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         email: str = payload.get("sub")
         if email is None:
             raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+        if datetime.utcnow() > datetime.fromtimestamp(payload.get("exp", 0)):
+            raise HTTPException(status_code=401, detail="Token expired")
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
     user = db.query(User).filter(User.email == email).first()
@@ -35,7 +37,6 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 @auth_router.post("/register", response_model=UserResponse, status_code=201)
 async def register_user(user: UserCreate, db: Session = Depends(get_db)):
-    # Проверка, существует ли пользователь с таким email
     existing_user = db.query(User).filter(User.email == user.email).first()
     if existing_user:
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -59,7 +60,6 @@ async def register_user(user: UserCreate, db: Session = Depends(get_db)):
 
 @auth_router.post("/login", response_model=Token)
 def login_user(user: UserCreate, db: Session = Depends(get_db)):
-    # Проверка существования пользователя
     db_user = db.query(User).filter(User.email == user.email).first()
     if not db_user or not verify_password(user.password, db_user.password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -71,11 +71,11 @@ def login_user(user: UserCreate, db: Session = Depends(get_db)):
 def create_access_token(data: dict):
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire.timestamp()})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-@auth_router.get("/verify-email")
+@auth_router.get("/verify-email", tags=["Authentication"])
 def verify_email(email: str, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == email).first()
     if not user:

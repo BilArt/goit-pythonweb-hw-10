@@ -1,12 +1,11 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
-from database import SessionLocal, engine
-from models import Base, Contact
-from schemas import ContactCreate, ContactResponse
+from contacts_api.database import SessionLocal, engine
+from contacts_api.models import Base, Contact, User
+from contacts_api.schemas import ContactCreate, ContactResponse
+from contacts_api.auth import auth_router, get_current_user
 from typing import List, Optional
 from datetime import date, timedelta
-from auth import auth_router, get_current_user
-from models import User
 
 Base.metadata.create_all(bind=engine)
 
@@ -21,12 +20,19 @@ def get_db():
     finally:
         db.close()
 
+@app.get("/", tags=["Health"])
+def health_check():
+    return {"message": "API is working!"}
+
 @app.post("/contacts/", response_model=ContactResponse)
 def create_contact(
     contact: ContactCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if not current_user.is_verified:
+        raise HTTPException(status_code=403, detail="Email not verified")
+
     db_contact = Contact(**contact.dict(), user_id=current_user.id)
     db.add(db_contact)
     db.commit()
@@ -78,7 +84,7 @@ def delete_contact(
         raise HTTPException(status_code=404, detail="Contact not found")
     db.delete(db_contact)
     db.commit()
-    return {"message": "Contact deleted successfully"}
+    return {"message": f"Contact with id {contact_id} deleted successfully"}
 
 @app.get("/contacts/search/", response_model=List[ContactResponse])
 def search_contacts(
