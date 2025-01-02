@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 from fastapi_mail.errors import ConnectionErrors
 from decouple import config
