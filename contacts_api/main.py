@@ -5,7 +5,8 @@ from models import Base, Contact
 from schemas import ContactCreate, ContactResponse
 from typing import List, Optional
 from datetime import date, timedelta
-from auth import auth_router 
+from auth import auth_router, get_current_user
+from models import User
 
 Base.metadata.create_all(bind=engine)
 
@@ -21,27 +22,43 @@ def get_db():
         db.close()
 
 @app.post("/contacts/", response_model=ContactResponse)
-def create_contact(contact: ContactCreate, db: Session = Depends(get_db)):
-    db_contact = Contact(**contact.dict())
+def create_contact(
+    contact: ContactCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    db_contact = Contact(**contact.dict(), user_id=current_user.id)
     db.add(db_contact)
     db.commit()
     db.refresh(db_contact)
     return db_contact
 
 @app.get("/contacts/", response_model=List[ContactResponse])
-def get_contacts(db: Session = Depends(get_db)):
-    return db.query(Contact).all()
+def get_contacts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    return db.query(Contact).filter(Contact.user_id == current_user.id).all()
 
 @app.get("/contacts/{contact_id}", response_model=ContactResponse)
-def get_contact(contact_id: int, db: Session = Depends(get_db)):
-    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+def get_contact(
+    contact_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    contact = db.query(Contact).filter(Contact.id == contact_id, Contact.user_id == current_user.id).first()
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
     return contact
 
 @app.put("/contacts/{contact_id}", response_model=ContactResponse)
-def update_contact(contact_id: int, contact: ContactCreate, db: Session = Depends(get_db)):
-    db_contact = db.query(Contact).filter(Contact.id == contact_id).first()
+def update_contact(
+    contact_id: int,
+    contact: ContactCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    db_contact = db.query(Contact).filter(Contact.id == contact_id, Contact.user_id == current_user.id).first()
     if not db_contact:
         raise HTTPException(status_code=404, detail="Contact not found")
     for key, value in contact.dict().items():
@@ -51,8 +68,12 @@ def update_contact(contact_id: int, contact: ContactCreate, db: Session = Depend
     return db_contact
 
 @app.delete("/contacts/{contact_id}")
-def delete_contact(contact_id: int, db: Session = Depends(get_db)):
-    db_contact = db.query(Contact).filter(Contact.id == contact_id).first()
+def delete_contact(
+    contact_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    db_contact = db.query(Contact).filter(Contact.id == contact_id, Contact.user_id == current_user.id).first()
     if not db_contact:
         raise HTTPException(status_code=404, detail="Contact not found")
     db.delete(db_contact)
@@ -65,8 +86,9 @@ def search_contacts(
     last_name: Optional[str] = None,
     email: Optional[str] = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    query = db.query(Contact)
+    query = db.query(Contact).filter(Contact.user_id == current_user.id)
     if first_name:
         query = query.filter(Contact.first_name.ilike(f"%{first_name}%"))
     if last_name:
@@ -76,7 +98,13 @@ def search_contacts(
     return query.all()
 
 @app.get("/contacts/upcoming-birthdays/", response_model=List[ContactResponse])
-def get_upcoming_birthdays(db: Session = Depends(get_db)):
+def get_upcoming_birthdays(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     today = date.today()
     next_week = today + timedelta(days=7)
-    return db.query(Contact).filter(Contact.birthday.between(today, next_week)).all()
+    return db.query(Contact).filter(
+        Contact.user_id == current_user.id,
+        Contact.birthday.between(today, next_week)
+    ).all()
